@@ -1,0 +1,23 @@
+{
+  "municipal": {
+    "descricao": "Palavras-chave de licitacoes municipais que a empresa consegue atender. Edite esta lista conforme suas diretrizes.",
+    "keywords": [
+      "exemplo-substitua-1",
+      "exemplo-substitua-2"
+    ]
+  },
+  "estadual": {
+    "descricao": "Palavras-chave de licitacoes estaduais que a empresa consegue atender. Edite esta lista conforme suas diretrizes.",
+    "keywords": [
+      "exemplo-substitua-1",
+      "exemplo-substitua-2"
+    ]
+  },
+  "federal": {
+    "descricao": "Palavras-chave de licitacoes federais que a empresa consegue atender. Edite esta lista conforme suas diretrizes.",
+    "keywords": [
+      "exemplo-substitua-1",
+      "exemplo-substitua-2"
+    ]
+  }
+}

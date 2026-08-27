@@ -23,6 +23,13 @@ Config via variaveis de ambiente:
 O SISLOG (assim como varios sites de governo) pode responder com falhas
 intermitentes quando acessado de IPs de nuvem (ex.: runners do GitHub Actions).
 Por isso a busca tenta novamente algumas vezes antes de desistir.
+
+Filtro "em curso": a coluna Status da tabela traz valores como "Em Andamento",
+"Homologada Parcial/Total", "Encerrada Parcial/Total", "Cancelada" etc. Itens cujo
+status contenha uma das palavras em STATUS_ENCERRADOS_PALAVRAS ja foram concluidos/
+adjudicados e nao aceitam mais proposta, entao sao ignorados (nao vao para o JSONL
+nem geram alerta) — sem isso o arquivo enchia de licitacoes de 2024/2025 que ja
+tinham sido homologadas ha muito tempo.
 """
 import os
 import time
@@ -45,6 +52,15 @@ HTTP_RETRY_BACKOFF = float(os.getenv("HTTP_RETRY_BACKOFF", "5"))
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; MonitorLicitacoesGO/1.0; +https://github.com/joseMarcioRsilva/monitor-licitacoes)"
 }
+
+STATUS_ENCERRADOS_PALAVRAS = (
+    "homologada", "encerrada", "cancelada", "revogada", "deserta", "fracassada", "anulada", "suspensa",
+)
+
+
+def status_em_curso(status):
+    status_lower = (status or "").lower()
+    return not any(palavra in status_lower for palavra in STATUS_ENCERRADOS_PALAVRAS)
 
 
 def send_telegram(text):
@@ -125,22 +141,25 @@ def run_once():
     for item in licitacoes:
         cur = conn.execute("SELECT 1 FROM seen WHERE id=?", (item["item_id"],))
         if not cur.fetchone():
-            logging.info("Nova licitacao encontrada: %s", item["objeto"])
-            registro = montar_registro(
-                fonte="SISLOG-GO",
-                esfera=ESFERA,
-                numero_contratacao=item["numero_contratacao"],
-                objeto=item["objeto"],
-                orgao=item["orgao"],
-                modalidade=item["modalidade"],
-                status=item["status"],
-                data_publicacao=item["publicacao"],
-                link=item["link"],
-                item_id=item["item_id"],
-            )
-            salvar_jsonl(registro)
-            if registro["relevante"]:
-                send_telegram(f"Nova licitacao relevante ({', '.join(registro['categorias'])}): {item['objeto']}\n{item['link']}")
+            if not status_em_curso(item["status"]):
+                logging.info("Ignorado (status '%s', nao esta mais em curso): %s", item["status"], item["objeto"])
+            else:
+                logging.info("Nova licitacao encontrada: %s", item["objeto"])
+                registro = montar_registro(
+                    fonte="SISLOG-GO",
+                    esfera=ESFERA,
+                    numero_contratacao=item["numero_contratacao"],
+                    objeto=item["objeto"],
+                    orgao=item["orgao"],
+                    modalidade=item["modalidade"],
+                    status=item["status"],
+                    data_publicacao=item["publicacao"],
+                    link=item["link"],
+                    item_id=item["item_id"],
+                )
+                salvar_jsonl(registro)
+                if registro["relevante"]:
+                    send_telegram(f"Nova licitacao relevante ({', '.join(registro['categorias'])}): {item['objeto']}\n{item['link']}")
             conn.execute("INSERT INTO seen(id,title,link,ts) VALUES(?,?,?,?)", (item["item_id"], item["objeto"], item["link"], int(time.time())))
             conn.commit()
     conn.close()

@@ -56,20 +56,42 @@ Edite config/categorias.json e substitua os valores de exemplo pelas palavras-ch
 ## Variaveis de ambiente
 
 - TG_TOKEN, TG_CHAT — credenciais do bot do Telegram para alertas
-- PNCP_START_DATE, PNCP_END_DATE — periodo de consulta no PNCP (YYYY-MM-DD)
+- PNCP_START_DATE, PNCP_END_DATE — periodo de consulta no PNCP (YYYY-MM-DD). **Opcional**: se nao definidas, o script usa uma janela movel automatica (hoje - PNCP_LOOKBACK_DAYS ate hoje), entao o monitor continua avancando sozinho sem precisar editar secrets.
+- PNCP_LOOKBACK_DAYS — quantos dias para tras a janela automatica cobre (default 3)
 - PNCP_PAGE_SIZE — tamanho de pagina da API do PNCP (default 50)
 - SISLOG_URL — URL da listagem do SISLOG (default ja configurado)
 - ESFERA — esfera padrao atribuida aos registros do SISLOG (default estadual)
-- DB_PATH — caminho do SQLite usado para deduplicacao (padrao diferente por script)
+- HTTP_RETRIES, HTTP_RETRY_BACKOFF — tentativas e espera entre elas ao buscar o SISLOG (default 3 tentativas, 5s de backoff crescente); util porque sites de governo as vezes falham de forma intermitente quando acessados de IPs de nuvem
+- DB_PATH — caminho do SQLite usado para deduplicacao (default data/pncp_seen.db e data/sislog_seen.db)
 - CATEGORIAS_PATH — caminho do arquivo de categorias (default config/categorias.json)
 - NOVAS_LICITACOES_PATH — caminho do arquivo JSONL de saida (default data/novas_licitacoes.jsonl)
+
+## Persistencia dos dados
+
+O workflow `.github/workflows/monitor.yml` roda a cada hora e, apos cada execucao, **faz commit** dos arquivos em `data/` (o JSONL de saida e os bancos SQLite de deduplicacao) de volta no repositorio. Isso e o que torna o dado persistente entre execucoes — sem isso, tudo era criado e descartado dentro da maquina temporaria do GitHub Actions a cada rodada, e a deduplicacao nunca funcionava de fato.
+
+Os jobs `pncp` e `sislog` rodam em sequencia (`needs: pncp`) para evitar dois commits simultaneos brigando pelo mesmo push.
+
+## Como consumir os dados (N8N / site HTML)
+
+Como `data/novas_licitacoes.jsonl` agora fica commitado no repositorio, qualquer sistema externo pode le-lo direto pela URL raw do GitHub, sem precisar rodar nada:
+
+```
+https://raw.githubusercontent.com/joseMarcioRsilva/monitor-licitacoes/main/data/novas_licitacoes.jsonl
+```
+
+- **No N8N**: um node HTTP Request (GET) nessa URL, seguido de um node Code/Function para fazer split por linha e `JSON.parse` de cada uma, e depois um Filter (`relevante == true`) antes de rotear para planilha, WhatsApp, CRM etc.
+- **No site HTML**: um `fetch()` client-side na mesma URL, parseando linha a linha, para montar uma tabela/lista de licitacoes relevantes.
+
+Isso funciona bem para o volume atual. Se o arquivo crescer muito (milhares de linhas), o proximo passo natural e migrar para um banco real (Postgres/Supabase) e o N8N passa a gravar la em vez de so ler o JSONL.
 
 ## Proximos passos sugeridos
 
 - Testar os dois scripts localmente e validar a classificacao por categoria com casos reais.
-- Cadastrar os secrets no GitHub (Settings, Secrets and variables, Actions) para o workflow agendado funcionar: TG_TOKEN, TG_CHAT, PNCP_START_DATE, PNCP_END_DATE.
-- No N8N, criar um fluxo que leia data/novas_licitacoes.jsonl (ou, futuramente, receba os dados via webhook) e direcione as licitacoes relevantes para o proximo passo do seu processo.
-- Para producao: migrar do SQLite para PostgreSQL e considerar MeiliSearch ou OpenSearch se o volume crescer muito.
+- Cadastrar os secrets no GitHub (Settings, Secrets and variables, Actions): TG_TOKEN e TG_CHAT (PNCP_START_DATE/END_DATE agora sao opcionais).
+- Editar `config/categorias.json` com as palavras-chave reais da empresa (hoje esta com valores de exemplo, entao nada e marcado como relevante).
+- No N8N, criar um fluxo que leia a URL raw de `data/novas_licitacoes.jsonl` (ver secao acima) e direcione as licitacoes relevantes para o proximo passo do processo.
+- Para producao: migrar do SQLite/JSONL-no-git para PostgreSQL e considerar MeiliSearch ou OpenSearch se o volume crescer muito.
 
 ## Legal e etico
 

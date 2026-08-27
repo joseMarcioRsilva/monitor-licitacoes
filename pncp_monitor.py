@@ -6,28 +6,46 @@ licitacao por categoria (municipal/estadual/federal) usando config/categorias.js
 notifica via Telegram quando relevante. Rode periodicamente (cron, GitHub Actions, VPS).
 
 Config via env vars:
-  PNCP_START_DATE, PNCP_END_DATE (YYYY-MM-DD)
+  PNCP_START_DATE, PNCP_END_DATE (YYYY-MM-DD) — opcional; se nao definidas, usa uma
+    janela movel automatica (hoje - PNCP_LOOKBACK_DAYS ate hoje), assim o monitor
+    continua avancando sozinho sem precisar editar secrets a cada execucao.
+  PNCP_LOOKBACK_DAYS (default 3)
   PNCP_PAGE_SIZE (default 50)
   TG_TOKEN, TG_CHAT (para alertas)
-  DB_PATH (default pncp_seen.db)
+  DB_PATH (default data/pncp_seen.db)
 """
 import os
 import time
 import requests
 import sqlite3
 import logging
+from datetime import datetime, timedelta, timezone
 
 from common import montar_registro, salvar_jsonl
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 BASE = os.getenv("PNCP_API_BASE", "https://pncp.gov.br/api/pncp/v1/consultas/licitacoes")
-START_DATE = os.getenv("PNCP_START_DATE")
-END_DATE = os.getenv("PNCP_END_DATE")
 PAGE_SIZE = int(os.getenv("PNCP_PAGE_SIZE", "50"))
+LOOKBACK_DAYS = int(os.getenv("PNCP_LOOKBACK_DAYS", "3"))
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT = os.getenv("TG_CHAT")
-DB_PATH = os.getenv("DB_PATH", "pncp_seen.db")
+DB_PATH = os.getenv("DB_PATH", "data/pncp_seen.db")
+
+
+def janela_padrao():
+    """Janela movel: hoje - LOOKBACK_DAYS ate hoje, usada quando PNCP_START_DATE/END_DATE nao sao definidas."""
+    hoje = datetime.now(timezone.utc).date()
+    inicio = hoje - timedelta(days=LOOKBACK_DAYS)
+    return inicio.strftime("%Y-%m-%d"), hoje.strftime("%Y-%m-%d")
+
+
+_start_env = os.getenv("PNCP_START_DATE")
+_end_env = os.getenv("PNCP_END_DATE")
+if _start_env and _end_env:
+    START_DATE, END_DATE = _start_env, _end_env
+else:
+    START_DATE, END_DATE = janela_padrao()
 
 
 def send_telegram(text):
@@ -56,9 +74,10 @@ def fetch_page(start_date, end_date, page=0, size=50):
 
 
 def run_once():
-    if not (START_DATE and END_DATE):
-        logging.error("Defina PNCP_START_DATE e PNCP_END_DATE no ambiente.")
-        return
+    logging.info("Consultando PNCP no periodo %s a %s", START_DATE, END_DATE)
+    pasta_db = os.path.dirname(DB_PATH)
+    if pasta_db:
+        os.makedirs(pasta_db, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS seen(id TEXT PRIMARY KEY, title TEXT, link TEXT, ts INTEGER)")
     page = 0

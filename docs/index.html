@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Licitações Relevantes</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --municipal: #059669;
+    --estadual: #d97706;
+    --federal: #7c3aed;
+    --outras: #6b7280;
+    --tag-bg: #eef2ff;
+    --tag-text: #3730a3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+  }
+  header {
+    max-width: 1000px;
+    margin: 0 auto 20px auto;
+  }
+  header h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px 0;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  #status {
+    max-width: 1000px;
+    margin: 0 auto 16px auto;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+  .secao { margin-bottom: 28px; }
+  .secao h2 {
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px 0;
+  }
+  .contagem {
+    background: var(--border);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .faixa { width: 6px; border-radius: 3px; height: 1.1em; display: inline-block; }
+  .faixa.municipal { background: var(--municipal); }
+  .faixa.estadual { background: var(--estadual); }
+  .faixa.federal { background: var(--federal); }
+  .faixa.outras { background: var(--outras); }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .card .objeto {
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.35;
+  }
+  .card .meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .card .meta b { color: var(--text); font-weight: 600; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .tag {
+    background: var(--tag-bg);
+    color: var(--tag-text);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .card a.link {
+    display: inline-block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .card a.link:hover { text-decoration: underline; }
+  .vazio {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-style: italic;
+    padding: 6px 0;
+  }
+  footer {
+    max-width: 1000px;
+    margin: 24px auto 0 auto;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Licitações relevantes</h1>
+    <p>Gerado automaticamente a partir do monitor de PNCP + SISLOG-GO, atualizado a cada hora.</p>
+  </header>
+  <div id="status">Carregando dados...</div>
+  <div class="container" id="conteudo"></div>
+  <footer>
+    Fonte: <code>data/novas_licitacoes.jsonl</code> — apenas licitações classificadas como relevantes
+    (bateram com alguma palavra-chave de <code>config/categorias.json</code>) e ainda em curso são exibidas aqui.
+  </footer>
+
+<script>
+const JSONL_URL = "https://raw.githubusercontent.com/joseMarcioRsilva/monitor-licitacoes/main/data/novas_licitacoes.jsonl";
+
+const ESFERAS = [
+  { chave: "municipal", titulo: "Municipal", classe: "municipal" },
+  { chave: "estadual", titulo: "Estadual", classe: "estadual" },
+  { chave: "federal", titulo: "Federal", classe: "federal" },
+  { chave: "outras", titulo: "Não classificado", classe: "outras" },
+];
+
+function escapeHtml(texto) {
+  const div = document.createElement("div");
+  div.textContent = texto == null ? "" : String(texto);
+  return div.innerHTML;
+}
+
+function formatarData(valor) {
+  if (!valor) return "";
+  const d = new Date(valor);
+  if (isNaN(d.getTime())) return escapeHtml(valor);
+  return d.toLocaleDateString("pt-BR");
+}
+
+function renderizarCard(registro) {
+  const categorias = (registro.categorias || [])
+    .map((c) => `<span class="tag">${escapeHtml(c)}</span>`)
+    .join("");
+  const linkHtml = registro.link
+    ? `<a class="link" href="${escapeHtml(registro.link)}" target="_blank" rel="noopener">Ver edital →</a>`
+    : "";
+  return `
+    <div class="card">
+      <div class="objeto">${escapeHtml(registro.objeto || "(sem objeto)")}</div>
+      <div class="meta">
+        <b>Órgão:</b> ${escapeHtml(registro.orgao || "—")}<br>
+        <b>Modalidade:</b> ${escapeHtml(registro.modalidade || "—")} ·
+        <b>Status:</b> ${escapeHtml(registro.status || "—")}<br>
+        <b>Publicação:</b> ${formatarData(registro.data_publicacao) || escapeHtml(registro.data_publicacao)} ·
+        <b>Fonte:</b> ${escapeHtml(registro.fonte || "—")}
+      </div>
+      <div class="tags">${categorias}</div>
+      ${linkHtml}
+    </div>
+  `;
+}
+
+function esferaChave(registro) {
+  const e = (registro.esfera || "").toLowerCase();
+  if (e === "municipal" || e === "estadual" || e === "federal") return e;
+  return "outras";
+}
+
+async function carregar() {
+  const statusEl = document.getElementById("status");
+  const conteudoEl = document.getElementById("conteudo");
+  try {
+    const resp = await fetch(JSONL_URL, { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const texto = await resp.text();
+    const linhas = texto.split("\n").filter((l) => l.trim().length > 0);
+
+    const grupos = { municipal: [], estadual: [], federal: [], outras: [] };
+    let totalRelevantes = 0;
+
+    for (const linha of linhas) {
+      let registro;
+      try {
+        registro = JSON.parse(linha);
+      } catch (e) {
+        continue;
+      }
+      if (!registro.relevante) continue;
+      totalRelevantes++;
+      grupos[esferaChave(registro)].push(registro);
+    }
+
+    for (const grupo of Object.values(grupos)) {
+      grupo.sort((a, b) => new Date(b.data_publicacao || 0) - new Date(a.data_publicacao || 0));
+    }
+
+    statusEl.textContent = `${totalRelevantes} licitação(ões) relevante(s) e em curso, de ${linhas.length} registradas ao todo. Atualizado em ${new Date().toLocaleString("pt-BR")}.`;
+
+    let html = "";
+    for (const { chave, titulo, classe } of ESFERAS) {
+      const itens = grupos[chave];
+      if (chave === "outras" && itens.length === 0) continue;
+      html += `
+        <div class="secao">
+          <h2><span class="faixa ${classe}"></span> ${titulo} <span class="contagem">${itens.length}</span></h2>
+          ${itens.length ? itens.map(renderizarCard).join("") : '<div class="vazio">Nenhuma licitação relevante no momento.</div>'}
+        </div>
+      `;
+    }
+    conteudoEl.innerHTML = html;
+  } catch (erro) {
+    statusEl.textContent = "Não foi possível carregar os dados agora.";
+    conteudoEl.innerHTML = `<div class="vazio">Erro: ${escapeHtml(erro.message)}. Tente recarregar a página.</div>`;
+  }
+}
+
+carregar();
+</script>
+</body>
+</html>
